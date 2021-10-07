@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "TileDownload.CLI": {
+      "commandName": "Project",
+      "commandLineArgs": "D:\\temp\\tiles 116.385313,39.921463,116.39628,39.91186 18"
+    }
+  }
+}
