@@ -1,8 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
-
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 
 using TileDownload.CLI.Services;
@@ -11,30 +10,43 @@ namespace TileDownload.CLI
 {
     internal class Program
     {
-        private static string destDir;
-        private static TileConfig tileConfig = new();
+        private static readonly string configFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appconfig.json");
+        private static TileDownLoadConfig tileConfig = new();
 
-        static async Task Main(string[] args)
+        static void Main(string[] args)
         {
             LogHelper.LogHeader("配置参数");
-            SetArgs(args);
+           
+            if (!File.Exists(configFile))
+            {
+                File.WriteAllText(configFile,JsonSerializer.Serialize(tileConfig));
+                LogHelper.Exit($"未发现配置文件，已重载配置，{configFile}");
+            }
+
+            try
+            {
+                tileConfig = JsonSerializer.Deserialize<TileDownLoadConfig>(File.ReadAllText(configFile));
+            }
+            catch (Exception)
+            {
+                LogHelper.Exit($"配置文件读取失败，请检查格式(json)，{configFile}");
+            }
+
             LogHelper.LogInfo(tileConfig.ToString());
             LogHelper.LogInfo("");
 
             var serviceCollection = new ServiceCollection();
 
             serviceCollection.AddHttpClient();
-            serviceCollection.AddTransient<ITileDownLoad, TileDownLoad_BdMap>();
+            serviceCollection.AddTransient<ITileDownLoad, TileDownLoad_AMap>();
 
             using var serviceProvider = serviceCollection.BuildServiceProvider();
 
             var tileDownload = serviceProvider.GetRequiredService<ITileDownLoad>();
 
-            LogHelper.LogHeader("开始下载");
-            await tileDownload.RunAsync(destDir, tileConfig);
+            LogHelper.LogHeader("处理中");
+            tileDownload.Run(tileConfig);
             LogHelper.LogInfo("");
-
-            LogHelper.LogHeader("下载完成");
         }
 
         private static void SetArgs(string[] args)
@@ -44,8 +56,8 @@ namespace TileDownload.CLI
                 LogHelper.Exit("请提供输出文件夹", "TileDownload.CLI.exe <dest_dir> <box> <zoom:可选(默认=17)>");
             }
 
-            destDir = args[0];
-            if (!Directory.Exists(destDir))
+            tileConfig.OutputDir = args[0];
+            if (!Directory.Exists(tileConfig.OutputDir))
             {
                 LogHelper.Exit("文件夹不存在");
             }
@@ -76,9 +88,9 @@ namespace TileDownload.CLI
             if (args.Length > 2)
             {
                 bool ret = int.TryParse(args[2], out int zoom);
-                if (!ret || zoom<1 || zoom > 23)
+                if (!ret || zoom<1 || zoom > 18)
                 {
-                    LogHelper.Exit("zoom参数转化失败，必须为整数。且 0 < zoom < 24");
+                    LogHelper.Exit("zoom参数转化失败，必须为整数。且 0 < zoom < 18");
                 }
 
                 tileConfig.Zoom = zoom;

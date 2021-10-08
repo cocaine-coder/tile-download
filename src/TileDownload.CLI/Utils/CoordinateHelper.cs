@@ -29,6 +29,7 @@ namespace TileDownload.CLI.Utils
                     * pi)) * 2.0 / 3.0;
             return ret;
         }
+
         public static double[] Transform(double lat, double lon)
         {
             if (OutOfChina(lat, lon))
@@ -47,6 +48,13 @@ namespace TileDownload.CLI.Utils
             double mgLon = lon + dLon;
             return new double[] { mgLat, mgLon };
         }
+
+        /// <summary>
+        /// 是否超过中国范围
+        /// </summary>
+        /// <param name="lat"></param>
+        /// <param name="lon"></param>
+        /// <returns></returns>
         public static bool OutOfChina(double lat, double lon)
         {
             if (lon < 72.004 || lon > 137.8347)
@@ -56,13 +64,12 @@ namespace TileDownload.CLI.Utils
             return false;
         }
 
-        /** 
-         * 84 to 火星坐标系 (GCJ-02) World Geodetic System ==> Mars Geodetic System 
-         * 
-         * @param lat 
-         * @param lon 
-         * @return 
-         */
+        /// <summary>
+        /// 84转火星
+        /// </summary>
+        /// <param name="lat"></param>
+        /// <param name="lon"></param>
+        /// <returns></returns>
         public static double[] WGS84_To_GCJ02(double lat, double lon)
         {
             if (OutOfChina(lat, lon))
@@ -82,22 +89,27 @@ namespace TileDownload.CLI.Utils
             return new double[] { mgLat, mgLon };
         }
 
-        /** 
-         * * 火星坐标系 (GCJ-02) to 84 * * @param lon * @param lat * @return 
-         * */
+        /// <summary>
+        /// 火星转84
+        /// </summary>
+        /// <param name="lat"></param>
+        /// <param name="lon"></param>
+        /// <returns></returns>
         public static double[] GCJ02_To_WGS84(double lat, double lon)
         {
-            double[] gps = Transform(lat, lon);
-            double lontitude = lon * 2 - gps[1];
-            double latitude = lat * 2 - gps[0];
-            return new double[] { latitude, lontitude };
+            double[] wgs84 = Transform(lat, lon);
+            double lontitude = lon * 2 - wgs84[1];
+            double latitude = lat * 2 - wgs84[0];
+
+            return new[] { latitude, lontitude };
         }
-        /** 
-         * 火星坐标系 (GCJ-02) 与百度坐标系 (BD-09) 的转换算法 将 GCJ-02 坐标转换成 BD-09 坐标 
-         * 
-         * @param lat 
-         * @param lon 
-         */
+
+        /// <summary>
+        ///火星转百度
+        /// </summary>
+        /// <param name="lat"></param>
+        /// <param name="lon"></param>
+        /// <returns></returns>
         public static double[] GCJ02_To_BD09(double lat, double lon)
         {
             double x = lon, y = lat;
@@ -105,14 +117,16 @@ namespace TileDownload.CLI.Utils
             double theta = Math.Atan2(y, x) + 0.000003 * Math.Cos(x * x_pi);
             double tempLon = z * Math.Cos(theta) + 0.0065;
             double tempLat = z * Math.Sin(theta) + 0.006;
-            double[] gps = { tempLat, tempLon };
-            return gps;
+
+            return new [] { tempLat, tempLon };
         }
 
-        /** 
-         * * 火星坐标系 (GCJ-02) 与百度坐标系 (BD-09) 的转换算法 * * 将 BD-09 坐标转换成GCJ-02 坐标 * * @param 
-         * bd_lat * @param bd_lon * @return 
-         */
+        /// <summary>
+        /// 百度转火星
+        /// </summary>
+        /// <param name="lat"></param>
+        /// <param name="lon"></param>
+        /// <returns></returns>
         public static double[] BD09_To_GCJ02(double lat, double lon)
         {
             double x = lon - 0.0065, y = lat - 0.006;
@@ -120,15 +134,16 @@ namespace TileDownload.CLI.Utils
             double theta = Math.Atan2(y, x) - 0.000003 * Math.Cos(x * x_pi);
             double tempLon = z * Math.Cos(theta);
             double tempLat = z * Math.Sin(theta);
-            double[] gps = { tempLat, tempLon };
-            return gps;
+
+            return new[] { tempLat, tempLon };
         }
 
-        /**将gps84转为bd09 
-         * @param lat 
-         * @param lon 
-         * @return 
-         */
+        /// <summary>
+        /// 84坐标转百度
+        /// </summary>
+        /// <param name="lat"></param>
+        /// <param name="lon"></param>
+        /// <returns></returns>
         public static double[] WGS84_To_BD09(double lat, double lon)
         {
             double[] gcj02 = WGS84_To_GCJ02(lat, lon);
@@ -136,12 +151,17 @@ namespace TileDownload.CLI.Utils
             return bd09;
         }
 
+        /// <summary>
+        /// 百度坐标转84
+        /// </summary>
+        /// <param name="lat"></param>
+        /// <param name="lon"></param>
+        /// <returns></returns>
         public static double[] BD09_To_WGS84(double lat, double lon)
         {
             double[] gcj02 = BD09_To_GCJ02(lat, lon);
-            double[] gps84 = GCJ02_To_WGS84(gcj02[0], gcj02[1]);
 
-            return gps84;
+            return GCJ02_To_WGS84(gcj02[0], gcj02[1]);
         }
     }
 }

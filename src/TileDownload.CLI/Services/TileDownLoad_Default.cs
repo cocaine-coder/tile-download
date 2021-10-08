@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -18,30 +19,68 @@ namespace TileDownload.CLI.Services
             GdalBase.ConfigureAll();
         }
 
-        public async Task RunAsync(string destDir, TileConfig tileConfig)
+        public void Run(TileDownLoadConfig tileConfig)
         {
+            var destDir = tileConfig.OutputDir;
             var (xMin, yMin) = LatLng2TileNumber(tileConfig.LeftTopPoint.Lng, tileConfig.LeftTopPoint.Lat, tileConfig.Zoom);
             var (xMax, yMax) = LatLng2TileNumber(tileConfig.RightBottomPoint.Lng, tileConfig.RightBottomPoint.Lat, tileConfig.Zoom);
 
             var imageWidth = 256 * (xMax - xMin + 1);
             var imageHeight = 256 * (yMax - yMin + 1);
 
+            var stopwatch = new Stopwatch();
+            stopwatch.Start();
+
+            var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = tileConfig.MaxCPU };
+            Parallel.For(xMin, xMax + 1, parallelOptions, x =>
+            {
+                var tileDir = Path.Combine(destDir, tileConfig.Zoom.ToString(), x.ToString());
+                if(!Directory.Exists(tileDir))
+                    Directory.CreateDirectory(tileDir);
+                
+                Parallel.For(yMin, yMax + 1, parallelOptions, y =>
+                {
+                    var srcFile = Path.Combine(tileDir, $"{y}.png");
+                    var buffer = httpClientFactory.CreateClient()
+                      .GetByteArrayAsync(CreateTileUrl(tileConfig.MapUrlTemplate, x, y, tileConfig.Zoom)).Result;
+                    File.WriteAllBytes(srcFile, buffer);
+                });
+            });
+
+            stopwatch.Stop();
+            LogHelper.LogInfo("切片下载完成：" + stopwatch.ElapsedMilliseconds + " ms");
+            stopwatch.Restart();
+
             var driver = Gdal.GetDriverByName("GTiff");
-            var destDataset = driver.Create(Path.Combine(destDir,"result.tif"), imageWidth, imageHeight, 3, DataType.GDT_Byte, null);
+            var destDataset = driver.Create(Path.Combine(destDir, $"{tileConfig.Zoom}.tif"), imageWidth, imageHeight, 3, DataType.GDT_Byte, null);
 
             for (int x = xMin; x <= xMax; x++)
             {
                 for (int y = yMin; y <= yMax; y++)
                 {
-                    var srcFile = Path.Combine(destDir, $"{tileConfig.Zoom}-{x}-{y}.jpeg");
-                    var buffer = await httpClientFactory.CreateClient()
-                        .GetByteArrayAsync(CreateTileUrl(tileConfig.MapUrlTemplate,x,y,tileConfig.Zoom));
-                    await File.WriteAllBytesAsync(srcFile, buffer);
-
-                    var srcDataset = Gdal.Open(srcFile, Access.GA_ReadOnly);
-                    SaveBitmapBuffered(srcDataset, destDataset, x - xMin, y - yMin);
+                    var srcFile = Path.Combine(destDir,tileConfig.Zoom.ToString(),x.ToString(), $"{y}.png");
+                    using var srcDataset = Gdal.Open(srcFile, Access.GA_ReadOnly);
+                    SaveBuffered(srcDataset, destDataset, x - xMin, y - yMin);
                 }
             }
+
+            destDataset.FlushCache();
+            destDataset.Dispose();
+
+            stopwatch.Stop();
+            LogHelper.LogInfo("切片合并完成：" + stopwatch.ElapsedMilliseconds + " ms");
+            stopwatch.Restart();
+
+            if (!tileConfig.IsSaveTiles)
+            {
+                Directory.Delete(Path.Combine(destDir,tileConfig.Zoom.ToString()),true);
+
+                stopwatch.Stop();
+                LogHelper.LogInfo("删除切片完成：" + stopwatch.ElapsedMilliseconds + " ms");
+                stopwatch.Restart();
+            }
+
+            stopwatch.Stop();
         }
 
         /// <summary>
@@ -66,7 +105,7 @@ namespace TileDownload.CLI.Services
         /// <param name="y"></param>
         /// <param name="zoom"></param>
         /// <returns></returns>
-        public virtual (double lng,double lat) TileNumber2LatLng(int x,int y,int zoom)
+        public virtual (double lng, double lat) TileNumber2LatLng(int x, int y, int zoom)
         {
             var n = Math.Pow(2, zoom);
             var lng = x / n * 360.0 - 180.0;
@@ -83,7 +122,7 @@ namespace TileDownload.CLI.Services
         /// <param name="y">瓦片编号 y</param>
         /// <param name="zoom">缩放级别</param>
         /// <returns></returns>
-        public virtual string CreateTileUrl(string urlTemplate, int x, int y, int zoom) => 
+        public virtual string CreateTileUrl(string urlTemplate, int x, int y, int zoom) =>
             urlTemplate.Replace("{x}", x.ToString()).Replace("{y}", y.ToString()).Replace("{z}", zoom.ToString());
 
         /// <summary>
@@ -113,7 +152,7 @@ namespace TileDownload.CLI.Services
         /// <param name="dst"></param>
         /// <param name="x"></param>
         /// <param name="y"></param>
-        private void SaveBitmapBuffered(Dataset src, Dataset dst, int x, int y)
+        private void SaveBuffered(Dataset src, Dataset dst, int x, int y)
         {
             var redBand = src.GetRasterBand(1);
             var greenBand = src.GetRasterBand(2);
