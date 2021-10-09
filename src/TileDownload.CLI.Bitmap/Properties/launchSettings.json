@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "TileDownload.CLI": {
+    "TileDownload.CLI.Minify": {
       "commandName": "Project",
       "commandLineArgs": "-c appconfig.json"
     }

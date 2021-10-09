@@ -57,7 +57,7 @@ namespace TileDownload.CLI.Services
         {
             return $"map_url_template : {MapUrlTemplate}\n" +
                 $"zoom : {Zoom}\n" +
-                $"box : {LeftTopPoint.Lng},{LeftTopPoint.Lat} {RightBottomPoint.Lng},{RightBottomPoint.Lat}\n" +
+                $"box : {LeftTopPoint} {RightBottomPoint}\n" +
                 $"output : {OutputDir}\n"+
                 $"max_cpu : {MaxCPU}\n"+
                 $"is_save_tiles : {IsSaveTiles}";
@@ -73,5 +73,10 @@ namespace TileDownload.CLI.Services
         }
         public double Lng { get; set; }
         public double Lat { get; set; }
+
+        public override string ToString()
+        {
+            return $"{Lng},{Lat}";
+        }
     }
 }

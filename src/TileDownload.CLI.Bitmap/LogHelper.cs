@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace TileDownload.CLI
+namespace TileDownload.CLI.Minify
 {
     internal static class LogHelper
     {
@@ -9,7 +9,7 @@ namespace TileDownload.CLI
             Console.WriteLine($">>>>>>>>>>>>>>>>>>>> {log} <<<<<<<<<<<<<<<<<<<");
         }
 
-        public static void LogInfo(string log)
+        public static void LogInfo(string log = "")
         {
             Console.WriteLine(log);
         }

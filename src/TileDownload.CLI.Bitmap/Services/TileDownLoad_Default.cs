@@ -1,18 +1,16 @@
 ﻿using System;
-using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
 
 using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
 
 namespace TileDownload.CLI.Services
 {
     public class TileDownLoad_Default : ITileDownLoad
     {
-        private readonly static object _lock = new object();
+        private readonly static object _lock = new();
         private readonly IHttpClientFactory httpClientFactory;
 
         public TileDownLoad_Default(IHttpClientFactory httpClientFactory)
@@ -20,7 +18,7 @@ namespace TileDownload.CLI.Services
             this.httpClientFactory = httpClientFactory;
         }
 
-        public void Run(TileDownLoadConfig tileConfig)
+        public void Run(TileDownLoadConfig tileConfig, IProgress<string> progress = null)
         {
             var destDir = tileConfig.OutputDir;
             var (xMin, yMin) = LatLng2TileNumber(tileConfig.LeftTopPoint.Lng, tileConfig.LeftTopPoint.Lat, tileConfig.Zoom);
@@ -29,9 +27,9 @@ namespace TileDownload.CLI.Services
             var imageWidth = 256 * (xMax - xMin + 1);
             var imageHeight = 256 * (yMax - yMin + 1);
 
-            var destBitmap = new Bitmap(imageWidth, imageHeight, PixelFormat.Format24bppRgb);
-            var stopwatch = new Stopwatch();
-            stopwatch.Start();
+            int count = 0;
+            int total = (xMax - xMin + 1) * (yMax - yMin + 1);
+            using var destBitmap = new Bitmap(imageWidth, imageHeight, PixelFormat.Format24bppRgb);
 
             var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = tileConfig.MaxCPU };
             Parallel.For(xMin, xMax + 1, parallelOptions, x =>
@@ -43,7 +41,8 @@ namespace TileDownload.CLI.Services
 
                     lock (_lock)
                     {
-                        var srcBitmap = new Bitmap(stream);
+                        //使用指针方式合并瓦片
+                        using var srcBitmap = new Bitmap(stream);
 
                         var destBitmapData = destBitmap.LockBits(
                             new Rectangle((x - xMin) * 256, (y - yMin) * 256, 256, 256),
@@ -59,14 +58,24 @@ namespace TileDownload.CLI.Services
 
                         destBitmap.UnlockBits(destBitmapData);
                         srcBitmap.UnlockBits(srcBitmapData);
+
+                        //进度
+                        count += 1;
+                        progress?.Report($"{count}/{total}");
+
+                        //保存瓦片
+                        if (tileConfig.IsSaveTiles)
+                        {
+                            var dir = Path.Combine(tileConfig.OutputDir, tileConfig.Zoom.ToString(),x.ToString());
+                            if(!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
+                            srcBitmap.Save(Path.Combine(dir,y.ToString()+".png"));
+                        }
                     }
                 });
             });
 
-            destBitmap.Save(Path.Combine(tileConfig.OutputDir, "result.tif"));
-
-            stopwatch.Stop();
-            LogHelper.LogInfo($"拼接完成 ：{stopwatch.ElapsedMilliseconds}");
+            destBitmap.Save(Path.Combine(tileConfig.OutputDir, $"{tileConfig.Zoom}-{tileConfig.LeftTopPoint}-{tileConfig.RightBottomPoint}.tif"));
         }
 
         /// <summary>

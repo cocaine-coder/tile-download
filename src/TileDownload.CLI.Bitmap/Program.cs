@@ -1,64 +1,57 @@
-﻿using System;
+﻿using Microsoft.Extensions.DependencyInjection;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using Microsoft.Extensions.DependencyInjection;
-
 using TileDownload.CLI.Services;
-using TileDownload.CLI.Utils;
 
-namespace TileDownload.CLI
+namespace TileDownload.CLI.Minify
 {
     internal class Program
     {
-        const string helpContent = "commond params :\n   --getconfig | -gc : 获取配置文件\n   --config | -c <path> : 设置配置文件并运行";
-        private static TileDownLoadConfig tileConfig = new();
-        private static readonly object _lock = new();
+        static object _lock = new();
+        static TileDownLoadConfig config = new();
+
+        static readonly string helpContent = "commond params :\n   --getconfig | -gc : 获取配置文件\n   --config | -c <path> : 设置配置文件并运行";
 
         static void Main(string[] args)
         {
-            SetArgs(args);
-            LogHelper.LogHeader("配置参数");
-            LogHelper.LogInfo(tileConfig.ToString());
-            LogHelper.LogInfo("");
+            SetConfigByArgs(args);
+
+            LogHelper.LogHeader("配置清单");
+            LogHelper.LogInfo(config.ToString());
+            LogHelper.LogInfo();
 
             LogHelper.LogHeader("开始运行");
-            var (consoleLeft, consoleTop) = Console.GetCursorPosition();
+            Console.Write("进度 : ");
+            var (consoleLeft,consoleTop) = Console.GetCursorPosition();
 
             var serviceCollection = new ServiceCollection();
+
             serviceCollection.AddHttpClient();
             serviceCollection.AddTransient<ITileDownLoad, TileDownLoad_AMap>();
+
             using var serviceProvider = serviceCollection.BuildServiceProvider();
-            var tileDownload = serviceProvider.GetRequiredService<ITileDownLoad>();
 
-            IProgress<ProgressReporter> downloadProgress = new Progress<ProgressReporter>(value =>
+            IProgress<string> progress = new Progress<string>(value =>
             {
                 lock (_lock)
                 {
-                    Console.SetCursorPosition(consoleLeft, consoleTop);
-                    Console.Write(value);
+                    Console.SetCursorPosition(consoleLeft, consoleTop); Console.Write(value);
                 }
             });
 
-            IProgress<ProgressReporter> mergeProgress = new Progress<ProgressReporter>(value =>
-            {
-                lock (_lock)
-                {
-                    Console.SetCursorPosition(consoleLeft, consoleTop + 1);
-                    Console.Write(value);
-                }
-            });
+            var stopWatch = Stopwatch.StartNew();
 
-            var stopwatch = Stopwatch.StartNew();
-            tileDownload.Run(tileConfig, downloadProgress, mergeProgress);
-            stopwatch.Stop();
+            serviceProvider.GetRequiredService<ITileDownLoad>().Run(config, progress);
 
-            Console.WriteLine();
-            Console.WriteLine($"耗时 : {stopwatch.ElapsedMilliseconds / 1000.0} s");
+            stopWatch.Stop();
+            LogHelper.LogInfo("");
+            LogHelper.LogInfo($"运行结束，共用时 : {stopWatch.ElapsedMilliseconds / 1000.0} s");
         }
 
-        private static void SetArgs(string[] args)
+        static void SetConfigByArgs(string[] args)
         {
             if (args.Any())
             {
@@ -72,7 +65,7 @@ namespace TileDownload.CLI
                 //生成默认配置文件,文件放在程序根目录
                 else if (firstFlag == "--getconfig" || firstFlag == "-gc")
                 {
-                    File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appconfig.json"), JsonSerializer.Serialize(tileConfig));
+                    File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appconfig.json"), JsonSerializer.Serialize(config));
                     Environment.Exit(0);
                 }
 
@@ -89,10 +82,10 @@ namespace TileDownload.CLI
 
                     try
                     {
-                        tileConfig = JsonSerializer.Deserialize<TileDownLoadConfig>(File.ReadAllText(configPath));
+                        config = JsonSerializer.Deserialize<TileDownLoadConfig>(File.ReadAllText(configPath));
 
                         //校验文件路径
-                        if (!Directory.Exists(tileConfig.OutputDir))
+                        if (!Directory.Exists(config.OutputDir))
                             LogHelper.Exit("输出文件夹不存在");
                     }
                     catch (Exception)

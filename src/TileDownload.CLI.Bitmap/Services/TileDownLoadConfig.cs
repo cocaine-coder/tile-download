@@ -5,6 +5,9 @@ namespace TileDownload.CLI.Services
 {
     public class TileDownLoadConfig
     {
+        private int zoom;
+        private int maxcup;
+
         public TileDownLoadConfig()
         {
             Zoom = 18;
@@ -26,7 +29,23 @@ namespace TileDownload.CLI.Services
         /// <summary>
         /// 下载层级
         /// </summary>
-        public int Zoom { get; set; }
+        public int Zoom
+        {
+            get
+            {
+                if (zoom < 1)
+                    zoom = 1;
+
+                if (zoom > 18)
+                    zoom = 18;
+
+                return zoom;
+            }
+            set
+            {
+                zoom = value;
+            }
+        }
 
         /// <summary>
         /// 左上角经纬度
@@ -41,12 +60,23 @@ namespace TileDownload.CLI.Services
         /// <summary>
         /// 输入目录
         /// </summary>
-        public string OutputDir {  get; set; }
+        public string OutputDir { get; set; }
 
         /// <summary>
         /// 最大核心
         /// </summary>
-        public int MaxCPU { get; set; }
+        public int MaxCPU
+        {
+            get
+            {
+                if(maxcup < 1) maxcup = 1;
+                return maxcup;
+            }
+            set
+            {
+                maxcup = value;
+            }
+        }
 
         /// <summary>
         /// 是否存储瓦片
@@ -57,21 +87,26 @@ namespace TileDownload.CLI.Services
         {
             return $"map_url_template : {MapUrlTemplate}\n" +
                 $"zoom : {Zoom}\n" +
-                $"box : {LeftTopPoint.Lng},{LeftTopPoint.Lat} {RightBottomPoint.Lng},{RightBottomPoint.Lat}\n" +
-                $"output : {OutputDir}\n"+
-                $"max_cpu : {MaxCPU}\n"+
+                $"box : {LeftTopPoint} {RightBottomPoint}\n" +
+                $"output : {OutputDir}\n" +
+                $"max_cpu : {MaxCPU}\n" +
                 $"is_save_tiles : {IsSaveTiles}";
         }
     }
 
     public class Point
     {
-        public Point(double lng,double lat)
+        public Point(double lng, double lat)
         {
             Lng = lng;
             Lat = lat;
         }
         public double Lng { get; set; }
         public double Lat { get; set; }
+
+        public override string ToString()
+        {
+            return $"{Lng},{Lat}";
+        }
     }
 }

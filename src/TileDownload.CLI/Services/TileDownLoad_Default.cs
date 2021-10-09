@@ -1,17 +1,22 @@
 ﻿using System;
-using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 
 using MaxRev.Gdal.Core;
 using OSGeo.GDAL;
 
+using TileDownload.CLI.Utils;
+
 namespace TileDownload.CLI.Services
 {
-    public class TileDownLoad_Default : ITileDownLoad
+    internal class TileDownLoad_Default : ITileDownLoad
     {
         private readonly IHttpClientFactory httpClientFactory;
+
+        private IProgress<ProgressReporter> progress1= null;
+        private IProgress<ProgressReporter> progress2 = null;
 
         public TileDownLoad_Default(IHttpClientFactory httpClientFactory)
         {
@@ -19,68 +24,66 @@ namespace TileDownload.CLI.Services
             GdalBase.ConfigureAll();
         }
 
-        public void Run(TileDownLoadConfig tileConfig)
+        public void Run(TileDownLoadConfig tileConfig, params IProgress<ProgressReporter>[] progresses)
         {
+            if(progresses != null)
+            {
+                if(progresses.Any()) progress1 = progresses[0];
+                if(progresses.Length > 1) progress2 = progresses[1];
+            }
+             
             var destDir = tileConfig.OutputDir;
             var (xMin, yMin) = LatLng2TileNumber(tileConfig.LeftTopPoint.Lng, tileConfig.LeftTopPoint.Lat, tileConfig.Zoom);
             var (xMax, yMax) = LatLng2TileNumber(tileConfig.RightBottomPoint.Lng, tileConfig.RightBottomPoint.Lat, tileConfig.Zoom);
 
-            var imageWidth = 256 * (xMax - xMin + 1);
-            var imageHeight = 256 * (yMax - yMin + 1);
+            var driver = Gdal.GetDriverByName("GTiff");
+            var destDataset = driver.Create(
+                Path.Combine(destDir, $"{tileConfig.Zoom}-{tileConfig.LeftTopPoint},{tileConfig.RightBottomPoint}.tif"),
+                256 * (xMax - xMin + 1),
+                256 * (yMax - yMin + 1),
+                3, DataType.GDT_Byte, null);
 
-            var stopwatch = new Stopwatch();
-            stopwatch.Start();
-
+            int count = 0;
+            int total = (xMax - xMin + 1) * (yMax - yMin + 1);
             var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = tileConfig.MaxCPU };
             Parallel.For(xMin, xMax + 1, parallelOptions, x =>
             {
                 var tileDir = Path.Combine(destDir, tileConfig.Zoom.ToString(), x.ToString());
-                if(!Directory.Exists(tileDir))
+                if (!Directory.Exists(tileDir))
                     Directory.CreateDirectory(tileDir);
-                
+
                 Parallel.For(yMin, yMax + 1, parallelOptions, y =>
                 {
                     var srcFile = Path.Combine(tileDir, $"{y}.png");
                     var buffer = httpClientFactory.CreateClient()
                       .GetByteArrayAsync(CreateTileUrl(tileConfig.MapUrlTemplate, x, y, tileConfig.Zoom)).Result;
                     File.WriteAllBytes(srcFile, buffer);
+
+                    count += 1;
+                    progress1?.Report(new ProgressReporter { Count = count, Total = total, Message = "下载进度" });
                 });
             });
 
-            stopwatch.Stop();
-            LogHelper.LogInfo("切片下载完成：" + stopwatch.ElapsedMilliseconds + " ms");
-            stopwatch.Restart();
-
-            var driver = Gdal.GetDriverByName("GTiff");
-            var destDataset = driver.Create(Path.Combine(destDir, $"{tileConfig.Zoom}.tif"), imageWidth, imageHeight, 3, DataType.GDT_Byte, null);
-
-            for (int x = xMin; x <= xMax; x++)
+            count = 0;
+            for (int x = xMin; x < xMax +1; x++)
             {
-                for (int y = yMin; y <= yMax; y++)
+                for (int y = yMin; y < yMax + 1; y++)
                 {
-                    var srcFile = Path.Combine(destDir,tileConfig.Zoom.ToString(),x.ToString(), $"{y}.png");
+                    var srcFile = Path.Combine(destDir, tileConfig.Zoom.ToString(), x.ToString(), $"{y}.png");
                     using var srcDataset = Gdal.Open(srcFile, Access.GA_ReadOnly);
                     SaveBuffered(srcDataset, destDataset, x - xMin, y - yMin);
+                    count += 1;
+                    progress2?.Report(new ProgressReporter { Count = count,Total = total,Message = "拼接进度" });
                 }
             }
 
             destDataset.FlushCache();
             destDataset.Dispose();
 
-            stopwatch.Stop();
-            LogHelper.LogInfo("切片合并完成：" + stopwatch.ElapsedMilliseconds + " ms");
-            stopwatch.Restart();
-
             if (!tileConfig.IsSaveTiles)
             {
-                Directory.Delete(Path.Combine(destDir,tileConfig.Zoom.ToString()),true);
-
-                stopwatch.Stop();
-                LogHelper.LogInfo("删除切片完成：" + stopwatch.ElapsedMilliseconds + " ms");
-                stopwatch.Restart();
+                Directory.Delete(Path.Combine(destDir, tileConfig.Zoom.ToString()), true);
             }
-
-            stopwatch.Stop();
         }
 
         /// <summary>
